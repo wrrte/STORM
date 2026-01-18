@@ -17,7 +17,7 @@ import shutil
 import pickle
 import os
 
-from utils import seed_np_torch, Logger, load_config
+from utils import seed_np_torch, Logger, load_config, device
 from replay_buffer import ReplayBuffer
 import env_wrapper
 import agents
@@ -107,14 +107,14 @@ def joint_train_world_model_agent(env_name, max_steps, num_envs, image_size,
                 else:
                     context_latent = world_model.encode_obs(torch.cat(list(context_obs), dim=1))
                     model_context_action = np.stack(list(context_action), axis=1)
-                    model_context_action = torch.Tensor(model_context_action).cuda()
+                    model_context_action = torch.Tensor(model_context_action).to(device)
                     prior_flattened_sample, last_dist_feat = world_model.calc_last_dist_feat(context_latent, model_context_action)
                     action = agent.sample_as_env_action(
                         torch.cat([prior_flattened_sample, last_dist_feat], dim=-1),
                         greedy=False
                     )
 
-            context_obs.append(rearrange(torch.Tensor(current_obs).cuda(), "B H W C -> B 1 C H W")/255)
+            context_obs.append(rearrange(torch.Tensor(current_obs).to(device), "B H W C -> B 1 C H W")/255)
             context_action.append(action)
         else:
             action = vec_env.action_space.sample()
@@ -194,7 +194,7 @@ def build_world_model(conf, action_dim):
         transformer_hidden_dim=conf.Models.WorldModel.TransformerHiddenDim,
         transformer_num_layers=conf.Models.WorldModel.TransformerNumLayers,
         transformer_num_heads=conf.Models.WorldModel.TransformerNumHeads
-    ).cuda()
+    ).to(device)
 
 
 def build_agent(conf, action_dim):
@@ -206,15 +206,16 @@ def build_agent(conf, action_dim):
         gamma=conf.Models.Agent.Gamma,
         lambd=conf.Models.Agent.Lambda,
         entropy_coef=conf.Models.Agent.EntropyCoef,
-    ).cuda()
+    ).to(device)
 
 
 if __name__ == "__main__":
     # ignore warnings
     import warnings
     warnings.filterwarnings('ignore')
-    torch.backends.cuda.matmul.allow_tf32 = True
-    torch.backends.cudnn.allow_tf32 = True
+    if torch.cuda.is_available():
+        torch.backends.cuda.matmul.allow_tf32 = True
+        torch.backends.cudnn.allow_tf32 = True
 
     # parse arguments
     parser = argparse.ArgumentParser()

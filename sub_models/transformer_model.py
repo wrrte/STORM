@@ -5,6 +5,7 @@ from einops import repeat, rearrange
 
 from sub_models.attention_blocks import get_vector_mask
 from sub_models.attention_blocks import PositionalEncoding1D, AttentionBlock, AttentionBlockKVCache
+from utils import device
 
 
 class StochasticTransformer(nn.Module):
@@ -81,7 +82,7 @@ class StochasticTransformerKVCache(nn.Module):
         '''
         self.kv_cache_list = []
         for layer in self.layer_stack:
-            self.kv_cache_list.append(torch.zeros(size=(batch_size, 0, self.feat_dim), dtype=dtype, device="cuda"))
+            self.kv_cache_list.append(torch.zeros(size=(batch_size, 0, self.feat_dim), dtype=dtype, device=device))
 
     def forward_with_kv_cache(self, samples, action):
         '''
