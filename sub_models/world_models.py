@@ -59,8 +59,10 @@ class EncoderBN(nn.Module):
     def forward(self, x):
         batch_size = x.shape[0]
         x = rearrange(x, "B L C H W -> (B L) C H W")
+        x = x.contiguous()
         x = self.backbone(x)
         x = rearrange(x, "(B L) C H W -> B L (C H W)", B=batch_size)
+        x = x.contiguous()
         return x
 
 
@@ -110,6 +112,7 @@ class DecoderBN(nn.Module):
 
     def forward(self, sample):
         batch_size = sample.shape[0]
+        sample = sample.contiguous()
         obs_hat = self.backbone(sample)
         obs_hat = rearrange(obs_hat, "(B L) C H W -> B L C H W", B=batch_size)
         return obs_hat
@@ -134,6 +137,7 @@ class DistHead(nn.Module):
 
     def forward_post(self, x):
         logits = self.post_head(x)
+        logits = logits.contiguous() # Ensure contiguous
         logits = rearrange(logits, "B L (K C) -> B L K C", K=self.stoch_dim)
         logits = self.unimix(logits)
         return logits
@@ -141,6 +145,7 @@ class DistHead(nn.Module):
     def forward_prior(self, x):
         logits = self.prior_head(x)
         logits = rearrange(logits, "B L (K C) -> B L K C", K=self.stoch_dim)
+        logits = logits.contiguous() # Ensure contiguous
         logits = self.unimix(logits)
         return logits
 
@@ -221,7 +226,7 @@ class WorldModel(nn.Module):
         self.final_feature_width = 4
         self.stoch_dim = 32
         self.stoch_flattened_dim = self.stoch_dim*self.stoch_dim
-        self.use_amp = True
+        self.use_amp = False # Disable AMP for stability on MPS
         self.tensor_dtype = torch.bfloat16 if self.use_amp else torch.float32
         self.imagine_batch_size = -1
         self.imagine_batch_length = -1
@@ -398,9 +403,18 @@ class WorldModel(nn.Module):
             temporal_mask = get_subsequent_mask_with_batch_length(batch_length, flattened_sample.device)
             dist_feat = self.storm_transformer(flattened_sample, action, temporal_mask)
             prior_logits = self.dist_head.forward_prior(dist_feat)
+            
             # decoding reward and termination with dist_feat
             reward_hat = self.reward_decoder(dist_feat)
             termination_hat = self.termination_decoder(dist_feat)
+            
+            # Ensure proper shapes and types for loss calculation
+            obs_hat = obs_hat.float()
+            obs = obs.float()
+            reward_hat = reward_hat.float()
+            reward = reward.float()
+            termination_hat = termination_hat.float()
+            termination = termination.float()
 
             # env loss
             reconstruction_loss = self.mse_loss_func(obs_hat, obs)

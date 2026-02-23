@@ -73,9 +73,9 @@ class MultiHeadAttention(nn.Module):
 
         # Pass through the pre-attention projection: b x lq x (n*dv)
         # Separate different heads: b x lq x n x dv
-        q = self.w_qs(q).view(sz_b, len_q, n_head, d_k)
-        k = self.w_ks(k).view(sz_b, len_k, n_head, d_k)
-        v = self.w_vs(v).view(sz_b, len_v, n_head, d_v)
+        q = self.w_qs(q).reshape(sz_b, len_q, n_head, d_k)
+        k = self.w_ks(k).reshape(sz_b, len_k, n_head, d_k)
+        v = self.w_vs(v).reshape(sz_b, len_v, n_head, d_v)
 
         # Transpose for attention dot product: b x n x lq x dv
         q, k, v = q.transpose(1, 2), k.transpose(1, 2), v.transpose(1, 2)
@@ -87,7 +87,7 @@ class MultiHeadAttention(nn.Module):
 
         # Transpose to move the head dimension back: b x lq x n x dv
         # Combine the last two dimensions to concatenate all the heads together: b x lq x (n*dv)
-        q = q.transpose(1, 2).contiguous().view(sz_b, len_q, -1)
+        q = q.transpose(1, 2).reshape(sz_b, len_q, -1)
         q = self.dropout(self.fc(q))
         q += residual
 

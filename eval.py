@@ -16,6 +16,7 @@ import json
 import shutil
 import pickle
 import os
+import ale_py
 
 from utils import seed_np_torch, Logger, load_config, device
 from replay_buffer import ReplayBuffer

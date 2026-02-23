@@ -12,9 +12,11 @@ from utils import EMAScalar, device
 
 
 def percentile(x, percentage):
-    flat_x = torch.flatten(x)
+    flat_x = torch.flatten(x).contiguous()
     kth = int(percentage*len(flat_x))
-    per = torch.kthvalue(flat_x, kth).values
+    # per = torch.kthvalue(flat_x, kth).values
+    if kth < 1: kth = 1
+    per = torch.sort(flat_x)[0][kth-1]
     return per
 
 
@@ -40,7 +42,7 @@ class ActorCriticAgent(nn.Module):
         self.gamma = gamma
         self.lambd = lambd
         self.entropy_coef = entropy_coef
-        self.use_amp = True
+        self.use_amp = False # Disable AMP for stability on MPS
         self.tensor_dtype = torch.bfloat16 if self.use_amp else torch.float32
 
         self.symlog_twohot_loss = SymLogTwoHotLoss(255, -20, 20)
@@ -83,7 +85,10 @@ class ActorCriticAgent(nn.Module):
         self.upperbound_ema = EMAScalar(decay=0.99)
 
         self.optimizer = torch.optim.Adam(self.parameters(), lr=3e-5, eps=1e-5)
-        self.scaler = torch.cuda.amp.GradScaler(enabled=self.use_amp)
+        if device.type == 'cuda':
+             self.scaler = torch.cuda.amp.GradScaler(enabled=self.use_amp)
+        else:
+             self.scaler = torch.cuda.amp.GradScaler(enabled=False)
 
     @torch.no_grad()
     def update_slow_critic(self, decay=0.98):
@@ -113,7 +118,7 @@ class ActorCriticAgent(nn.Module):
     @torch.no_grad()
     def sample(self, latent, greedy=False):
         self.eval()
-        with torch.autocast(device_type='cuda', dtype=torch.bfloat16, enabled=self.use_amp):
+        with torch.autocast(device_type=device.type, dtype=torch.bfloat16, enabled=self.use_amp):
             logits = self.policy(latent)
             dist = distributions.Categorical(logits=logits)
             if greedy:
@@ -131,7 +136,7 @@ class ActorCriticAgent(nn.Module):
         Update policy and value model
         '''
         self.train()
-        with torch.autocast(device_type='cuda', dtype=torch.bfloat16, enabled=self.use_amp):
+        with torch.autocast(device_type=device.type, dtype=torch.bfloat16, enabled=self.use_amp):
             logits, raw_value = self.get_logits_raw_value(latent)
             dist = distributions.Categorical(logits=logits[:, :-1])
             log_prob = dist.log_prob(action)
@@ -150,7 +155,7 @@ class ActorCriticAgent(nn.Module):
             lower_bound = self.lowerbound_ema(percentile(lambda_return, 0.05))
             upper_bound = self.upperbound_ema(percentile(lambda_return, 0.95))
             S = upper_bound-lower_bound
-            norm_ratio = torch.max(torch.ones(1).cuda(), S)  # max(1, S) in the paper
+            norm_ratio = torch.max(torch.ones(1).to(device), S)  # max(1, S) in the paper
             norm_advantage = (lambda_return-value[:, :-1]) / norm_ratio
             policy_loss = -(log_prob * norm_advantage.detach()).mean()
 

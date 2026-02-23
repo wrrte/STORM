@@ -16,6 +16,7 @@ import json
 import shutil
 import pickle
 import os
+import ale_py  # Added to register ALE environments
 
 from utils import seed_np_torch, Logger, load_config, device
 from replay_buffer import ReplayBuffer
@@ -29,6 +30,8 @@ def build_single_env(env_name, image_size, seed):
     env = gymnasium.make(env_name, full_action_space=False, render_mode="rgb_array", frameskip=1)
     env = env_wrapper.SeedEnvWrapper(env, seed=seed)
     env = env_wrapper.MaxLast2FrameSkipWrapper(env, skip=4)
+    if isinstance(image_size, int):
+        image_size = (image_size, image_size)
     env = gymnasium.wrappers.ResizeObservation(env, shape=image_size)
     env = env_wrapper.LifeLossInfo(env)
     return env
