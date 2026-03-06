@@ -34,8 +34,10 @@ def process_visualize(img):
 
 
 def build_single_env(env_name, image_size):
-    env = gymnasium.make(env_name, full_action_space=False, render_mode="rgb_array", frameskip=1)
+    env = gymnasium.make(env_name, full_action_space=False, render_mode="human", frameskip=1)
     env = env_wrapper.MaxLast2FrameSkipWrapper(env, skip=4)
+    if isinstance(image_size, int):
+        image_size = (image_size, image_size)
     env = gymnasium.wrappers.ResizeObservation(env, shape=image_size)
     return env
 
@@ -145,7 +147,7 @@ if __name__ == "__main__":
         episode_avg_return = eval_episodes(
             num_episode=20,
             env_name=args.env_name,
-            num_envs=5,
+            num_envs=1,
             max_steps=conf.JointTrainAgent.SampleMaxSteps,
             image_size=conf.BasicSettings.ImageSize,
             world_model=world_model,
