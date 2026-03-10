@@ -135,19 +135,32 @@ def joint_train_world_model_agent(env_name, max_steps, num_envs, image_size,
                 
                 # 예측값과 실제 관찰값 간의 오차(MSE)를 환경(Batch)별로 계산
                 surprise = ((obs_hat - obs_tensor) ** 2).sum(dim=(2, 3, 4)).squeeze(1) # B 형태의 Tensor
+                surprise_val = surprise.mean().item()
 
-                if(surprise.mean().item()>0.1):
-                    replay_buffer.append(current_obs, action, reward, np.logical_or(done, info["life_loss"]))
-        else:
-            replay_buffer.append(current_obs, action, reward, np.logical_or(done, info["life_loss"]))
+                # surprise.mean().item()을 step에 따른 그래프로 그리고 싶다.
+                # 또, step에 따른 replay buffer 내부의 메모리 용량 또한 그래프로 그리자. original train도. 그럼 증가량을 비교할 수 있겠지.
+                logger.log('sample/surprise', surprise_val, step=total_steps)
+
+                # 1. 게임 종료 상태 함께 기록 (어느 프레임/스텝에 종료되었는지 역추적 가능하게 함)
+                is_done = float(np.logical_or(done, truncated).any())
+                logger.log('sample/episode_done', is_done, step=total_steps)
+
+                # 2. Surprise 값이 임계치(예: 0.1) 이상인 경우, 이전 문맥(16프레임)과 현재 예측하기 어려웠던 프레임을 비디오로 생성하여 기록
+                SURPRISE_THRESHOLD = 0.1
+                if surprise_val > SURPRISE_THRESHOLD:
+                    video_frames = list(context_obs) + [obs_tensor]
+                    video_tensor = torch.cat(video_frames, dim=1)  # (B, T, C, H, W)
+                    logger.log('video/high_surprise', video_tensor, step=total_steps)
+        
+        replay_buffer.append(current_obs, action, reward, np.logical_or(done, info["life_loss"]))
 
         done_flag = np.logical_or(done, truncated)
         if done_flag.any():
             for i in range(num_envs):
                 if done_flag[i]:
-                    logger.log(f"sample/{env_name}_reward", sum_reward[i])
-                    logger.log(f"sample/{env_name}_episode_steps", current_info["episode_frame_number"][i]//4)  # framskip=4
-                    logger.log("replay_buffer/length", len(replay_buffer))
+                    logger.log(f"sample/{env_name}_reward", sum_reward[i], step=total_steps)
+                    logger.log(f"sample/{env_name}_episode_steps", current_info["episode_frame_number"][i]//4, step=total_steps)  # framskip=4
+                    logger.log("replay_buffer/length", len(replay_buffer), step=total_steps)
                     sum_reward[i] = 0
 
         # update current_obs, current_info and sum_reward
